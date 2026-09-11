@@ -5,12 +5,18 @@
   "description": "Postman/Newman API test suite for the ParaBank REST API (https://parabank.parasoft.com)",
   "scripts": {
     "generate": "node scripts/generate-collection.js",
-    "test": "newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"01 - Authentication\" --folder \"02 - Customer Profile\" --folder \"03 - Accounts\" --folder \"04 - Money Movement\" --folder \"05 - Transactions\" --folder \"06 - Loans\" --folder \"07 - Investments (Positions)\" --reporters cli,junit,htmlextra --reporter-junit-export newman/report.xml --reporter-htmlextra-export newman/report.html",
+    "test": "rimraf allure-results && newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"01 - Authentication\" --folder \"02 - Customer Profile\" --folder \"03 - Accounts\" --folder \"04 - Money Movement\" --folder \"05 - Transactions\" --folder \"06 - Loans\" --folder \"07 - Investments (Positions)\" --reporters cli,junit,htmlextra,allure --reporter-junit-export newman/report.xml --reporter-htmlextra-export newman/report.html",
     "test:cli": "newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"01 - Authentication\" --folder \"02 - Customer Profile\" --folder \"03 - Accounts\" --folder \"04 - Money Movement\" --folder \"05 - Transactions\" --folder \"06 - Loans\" --folder \"07 - Investments (Positions)\"",
-    "test:admin": "newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"09 - Admin (DESTRUCTIVE - opt-in only)\" --reporters cli"
+    "test:admin": "newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"09 - Admin (DESTRUCTIVE - opt-in only)\" --reporters cli",
+    "report:allure:generate": "allure generate allure-results --clean -o allure-report",
+    "report:allure:open": "allure open allure-report",
+    "test:allure": "npm test && npm run report:allure:generate && npm run report:allure:open"
   },
   "devDependencies": {
+    "allure-commandline": "^2.43.0",
     "newman": "^6.2.1",
-    "newman-reporter-htmlextra": "^1.23.1"
+    "newman-reporter-allure": "^3.12.1",
+    "newman-reporter-htmlextra": "^1.23.1",
+    "rimraf": "^5.0.10"
   }
 }

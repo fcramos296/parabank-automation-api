@@ -56,7 +56,7 @@ JSON da collection.
 
 ```bash
 npm install
-npm test          # roda as pastas 01-07 (seguras) + relatórios CLI/JUnit/HTML em newman/
+npm test          # roda as pastas 01-07 (seguras) + relatórios CLI/JUnit/HTML/Allure
 npm run test:cli  # mesma coisa, só saída no terminal (sem gerar relatórios em arquivo)
 ```
 
@@ -66,6 +66,32 @@ Variáveis do environment (`postman/ParaBank.postman_environment.json`):
 - `username` / `password` — padrão `john` / `demo` (conta de demonstração publicamente documentada do ParaBank)
 
 Ajuste-as (ou passe `--env-var chave=valor` ao newman) para apontar para outra instância/conta.
+
+## Relatórios com Allure
+
+`npm test` já roda a collection com o reporter `newman-reporter-allure` habilitado (junto com `cli`, `junit` e
+`htmlextra`), gerando os resultados brutos em `allure-results/` (um JSON por request, mais anexos de
+request/response) — esse diretório é limpo no início de cada `npm test` para não acumular resultados de execuções
+antigas, e não deve ser versionado (já está no `.gitignore`).
+
+Para transformar `allure-results/` num relatório HTML navegável:
+
+```bash
+npm run report:allure:generate   # allure generate allure-results --clean -o allure-report
+npm run report:allure:open       # abre allure-report num servidor local
+
+# ou os três passos de uma vez (roda os testes, gera e abre o relatório):
+npm run test:allure
+```
+
+**Pré-requisito:** o CLI do Allure (pacote `allure-commandline`, já incluído nas `devDependencies`) precisa de
+**Java (JRE 8+)** instalado e no `PATH` — é uma dependência do próprio Allure, não do Node. Sem Java, `allure
+generate`/`allure open` falham mesmo com os pacotes npm instalados.
+
+O relatório inclui, por request: status (passed/failed/broken), duração, cada `pm.test()` como um step, e os
+dados brutos de request/response (URL, headers, body) como anexos — útil para depurar uma falha sem precisar
+rodar a collection de novo no Postman. Validado localmente contra o mock server: `allure-report/widgets/summary.json`
+reportou 27 passed / 1 failed de 28 requests, batendo exatamente com a saída do `newman` CLI.
 
 ## ⚠️ Limitação conhecida deste ambiente (execução ao vivo)
 

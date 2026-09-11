@@ -1,3 +1,5 @@
 node_modules/
 newman/
+allure-results/
+allure-report/
 *.log
