@@ -1,0 +1,39 @@
+name: Live API Regression
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run non-destructive ParaBank API suite
+        run: npm test
+
+      - name: Upload Newman and Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parabank-api-results
+          path: |
+            newman/
+            allure-results/
+          if-no-files-found: warn
+          retention-days: 14
