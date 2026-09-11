@@ -2,54 +2,35 @@
 const fs = require('fs');
 const path = require('path');
 
-function uid() {
-  // deterministic-ish uuid v4-like string, good enough for postman ids
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
+const COLLECTION_ID = 'c2a0be39-cd74-40c7-8565-b0ea0b57eaab';
 
 function scriptEvent(type, lines) {
   return {
     listen: type,
-    script: {
-      type: 'text/javascript',
-      packages: {},
-      exec: lines,
-    },
+    script: { type: 'text/javascript', packages: {}, exec: lines },
   };
 }
 
 function url(rawPath, query) {
-  const raw =
-    '{{baseUrl}}' + rawPath + (query && query.length ? '?' + query.map((q) => `${q.key}=${q.value}`).join('&') : '');
-  const pathParts = rawPath.replace(/^\//, '').split('/');
-  const u = {
-    raw,
+  const queryString = query?.length ? `?${query.map((q) => `${q.key}=${q.value}`).join('&')}` : '';
+  const result = {
+    raw: `{{baseUrl}}${rawPath}${queryString}`,
     host: ['{{baseUrl}}'],
-    path: pathParts,
+    path: rawPath.replace(/^\//, '').split('/'),
   };
-  if (query && query.length) {
-    u.query = query.map((q) => ({ key: q.key, value: q.value }));
-  }
-  return u;
+  if (query?.length) result.query = query.map((q) => ({ key: q.key, value: q.value }));
+  return result;
 }
 
-function request({ name, method, rawPath, query, description, tests, prerequest, jsonBody }) {
+function request({ name, method, rawPath, query, description = '', tests = [], prerequest = [], jsonBody }) {
   const header = [{ key: 'Accept', value: 'application/json' }];
   const item = {
     name,
     event: [],
-    request: {
-      method,
-      header,
-      url: url(rawPath, query),
-      description: description || '',
-    },
+    request: { method, header, url: url(rawPath, query), description },
     response: [],
   };
+
   if (jsonBody) {
     header.push({ key: 'Content-Type', value: 'application/json' });
     item.request.body = {
@@ -58,22 +39,14 @@ function request({ name, method, rawPath, query, description, tests, prerequest,
       options: { raw: { language: 'json' } },
     };
   }
-  if (prerequest && prerequest.length) {
-    item.event.push(scriptEvent('prerequest', prerequest));
-  }
-  if (tests && tests.length) {
-    item.event.push(scriptEvent('test', tests));
-  }
+  if (prerequest.length) item.event.push(scriptEvent('prerequest', prerequest));
+  if (tests.length) item.event.push(scriptEvent('test', tests));
   return item;
 }
 
 function folder(name, description, items) {
-  return { name, description: description || '', item: items };
+  return { name, description, item: items };
 }
-
-// ---------------------------------------------------------------------------
-// Reusable test snippets
-// ---------------------------------------------------------------------------
 
 const STATUS_200 = [
   "pm.test('Status code is 200', function () {",
@@ -81,13 +54,107 @@ const STATUS_200 = [
   '});',
 ];
 
-function arrayResponseTest(label) {
-  return [`pm.test('${label}', function () {`, '    pm.expect(pm.response.json()).to.be.an(\'array\');', '});'];
+const NO_SERVER_ERROR = [
+  "pm.test('Request does not crash the server', function () {",
+  '    pm.expect(pm.response.code).to.be.below(500);',
+  '});',
+];
+
+function schemaTest(label, schema) {
+  return [
+    `pm.test('${label}', function () {`,
+    `    var schema = ${JSON.stringify(schema)};`,
+    '    pm.response.to.have.jsonSchema(schema);',
+    '});',
+  ];
 }
 
-// ---------------------------------------------------------------------------
-// Collection-level scripts
-// ---------------------------------------------------------------------------
+const addressSchema = {
+  type: 'object',
+  required: ['street', 'city', 'state', 'zipCode'],
+  properties: {
+    street: { type: 'string' },
+    city: { type: 'string' },
+    state: { type: 'string' },
+    zipCode: { type: 'string' },
+  },
+};
+
+const customerSchema = {
+  type: 'object',
+  required: ['id', 'firstName', 'lastName', 'address'],
+  properties: {
+    id: { type: 'number' },
+    firstName: { type: 'string' },
+    lastName: { type: 'string' },
+    address: addressSchema,
+    phoneNumber: { type: ['string', 'null'] },
+    ssn: { type: ['string', 'null'] },
+  },
+};
+
+const accountSchema = {
+  type: 'object',
+  required: ['id', 'type', 'balance'],
+  properties: {
+    id: { type: 'number' },
+    customerId: { type: 'number' },
+    type: { type: 'string' },
+    balance: { type: 'number' },
+  },
+};
+
+const transactionSchema = {
+  type: 'object',
+  required: ['id', 'type', 'date', 'amount'],
+  properties: {
+    id: { type: 'number' },
+    accountId: { type: 'number' },
+    type: { type: 'string' },
+    date: {},
+    amount: { type: 'number' },
+    description: { type: ['string', 'null'] },
+  },
+};
+
+const positionSchema = {
+  type: 'object',
+  required: ['positionId', 'symbol'],
+  properties: {
+    positionId: { type: 'number' },
+    symbol: { type: 'string' },
+    shares: { type: 'number' },
+  },
+};
+
+const loanSchema = {
+  type: 'object',
+  required: ['approved', 'responseDate'],
+  properties: {
+    approved: { type: 'boolean' },
+    responseDate: {},
+    accountId: { type: 'number' },
+    message: { type: ['string', 'null'] },
+  },
+};
+
+const billPaySchema = {
+  type: 'object',
+  required: ['payeeName', 'amount', 'accountId'],
+  properties: {
+    payeeName: { type: 'string' },
+    amount: { type: 'number' },
+    accountId: { type: 'number' },
+  },
+};
+
+const ADMIN_GUARD = [
+  "var allow = String(pm.environment.get('allowDestructive') || '').toLowerCase() === 'true';",
+  "var baseUrl = String(pm.environment.get('baseUrl') || '');",
+  "var isPublicDemo = /parabank\\.parasoft\\.com/i.test(baseUrl);",
+  "if (!allow) { throw new Error('Blocked destructive admin request. Set allowDestructive=true explicitly.'); }",
+  "if (isPublicDemo) { throw new Error('Blocked destructive admin request against the public ParaBank demo. Use a controlled/local instance.'); }",
+];
 
 const COLLECTION_PREREQUEST = [
   "if (!pm.collectionVariables.get('__datesInitialized')) {",
@@ -108,419 +175,432 @@ const COLLECTION_TEST = [
   '});',
 ];
 
-// ---------------------------------------------------------------------------
-// 01 - Authentication
-// ---------------------------------------------------------------------------
+const authFolder = folder('01 - Authentication', 'Authentication and negative credential validation.', [
+  request({
+    name: 'Login - Valid credentials',
+    method: 'GET',
+    rawPath: '/login/{{username}}/{{password}}',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Customer contract is valid', customerSchema),
+      "pm.test('Response contains the authenticated customer', function () {",
+      '    var json = pm.response.json();',
+      "    pm.expect(json.id).to.be.a('number');",
+      "    pm.expect(json.firstName).to.be.a('string').and.not.empty;",
+      "    pm.expect(json.lastName).to.be.a('string').and.not.empty;",
+      "    pm.collectionVariables.set('customerId', json.id);",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Login - Invalid credentials',
+    method: 'GET',
+    rawPath: '/login/invalid_user_xyz/wrong_password_123',
+    description: 'A negative login must never resolve a real customer and must not produce a 5xx server failure.',
+    tests: [
+      ...NO_SERVER_ERROR,
+      "pm.test('Invalid login does not resolve a customer', function () {",
+      '    if (pm.response.code === 200 && pm.response.text().trim()) {',
+      '        var json = pm.response.json();',
+      "        pm.expect(json.id, 'unexpected customer id for invalid credentials').to.be.undefined;",
+      '    }',
+      '});',
+    ],
+  }),
+]);
 
-const authFolder = folder(
-  '01 - Authentication',
-  'Login endpoint of the ParaBank REST service (GET /login/{username}/{password}).',
-  [
-    request({
-      name: 'Login - Valid credentials',
-      method: 'GET',
-      rawPath: '/login/{{username}}/{{password}}',
-      description:
-        'Logs in with the credentials configured in the environment (defaults to the well-known ParaBank demo account john/demo) and captures the resulting customerId for every later request.',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Response contains a valid customer with an id', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json).to.have.property('id');",
-        "    pm.expect(json.id).to.be.a('number');",
-        "    pm.collectionVariables.set('customerId', json.id);",
-        '});',
-        "pm.test('Customer first/last name are present', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json.firstName).to.be.a('string');",
-        "    pm.expect(json.lastName).to.be.a('string');",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Login - Invalid credentials',
-      method: 'GET',
-      rawPath: '/login/invalid_user_xyz/wrong_password_123',
-      description: 'Negative test: a made-up username/password must never resolve to a real customer.',
-      tests: [
-        "pm.test('Invalid login does not return a valid customer', function () {",
-        '    if (pm.response.code === 200) {',
-        '        var body = pm.response.text();',
-        '        if (body && body.trim().length > 0) {',
-        '            var json = pm.response.json();',
-        "            pm.expect(json.id, 'should not resolve an id for bad credentials').to.be.undefined;",
-        '        }',
-        '    } else {',
-        '        pm.expect(pm.response.code).to.be.oneOf([204, 404, 500]);',
-        '    }',
-        '});',
-      ],
-    }),
-  ]
-);
+const customerFolder = folder('02 - Customer Profile', 'Customer lookup and idempotent update.', [
+  request({
+    name: 'Get Customer - Valid id',
+    method: 'GET',
+    rawPath: '/customers/{{customerId}}',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Customer contract is valid', customerSchema),
+      "pm.test('Customer id matches requested id', function () {",
+      '    var json = pm.response.json();',
+      "    pm.expect(String(json.id)).to.eql(String(pm.collectionVariables.get('customerId')));",
+      "    pm.collectionVariables.set('custFirstName', json.firstName || '');",
+      "    pm.collectionVariables.set('custLastName', json.lastName || '');",
+      "    pm.collectionVariables.set('custSsn', json.ssn || '');",
+      "    pm.collectionVariables.set('custPhone', json.phoneNumber || '');",
+      '    var addr = json.address || {};',
+      "    pm.collectionVariables.set('custStreet', addr.street || '');",
+      "    pm.collectionVariables.set('custCity', addr.city || '');",
+      "    pm.collectionVariables.set('custState', addr.state || '');",
+      "    pm.collectionVariables.set('custZip', addr.zipCode || '');",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Customer - Unknown id',
+    method: 'GET',
+    rawPath: '/customers/999999999',
+    tests: [
+      ...NO_SERVER_ERROR,
+      "pm.test('Unknown customer does not return valid customer data', function () {",
+      '    if (pm.response.code === 200 && pm.response.text().trim()) {',
+      '        var json = pm.response.json();',
+      "        pm.expect(json.id, 'unexpected customer resolved for made-up id').to.be.undefined;",
+      '    }',
+      '});',
+    ],
+  }),
+  request({
+    name: 'Update Customer - Idempotent resubmit',
+    method: 'POST',
+    rawPath: '/customers/update/{{customerId}}',
+    query: [
+      { key: 'firstName', value: '{{custFirstName}}' },
+      { key: 'lastName', value: '{{custLastName}}' },
+      { key: 'street', value: '{{custStreet}}' },
+      { key: 'city', value: '{{custCity}}' },
+      { key: 'state', value: '{{custState}}' },
+      { key: 'zipCode', value: '{{custZip}}' },
+      { key: 'phoneNumber', value: '{{custPhone}}' },
+      { key: 'ssn', value: '{{custSsn}}' },
+      { key: 'username', value: '{{username}}' },
+      { key: 'password', value: '{{password}}' },
+    ],
+    tests: [
+      ...STATUS_200,
+      "pm.test('Update confirmation is non-empty', function () {",
+      "    pm.expect(pm.response.text()).to.be.a('string').and.not.empty;",
+      '});',
+    ],
+  }),
+]);
 
-// ---------------------------------------------------------------------------
-// 02 - Customer Profile
-// ---------------------------------------------------------------------------
+const accountsFolder = folder('03 - Accounts', 'Account retrieval and creation with contract checks.', [
+  request({
+    name: 'Get Customer Accounts',
+    method: 'GET',
+    rawPath: '/customers/{{customerId}}/accounts',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Accounts contract is valid', { type: 'array', minItems: 1, items: accountSchema }),
+      "pm.test('At least one account is available', function () {",
+      '    var json = pm.response.json();',
+      '    pm.expect(json.length).to.be.above(0);',
+      "    pm.collectionVariables.set('primaryAccountId', json[0].id);",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Account - Valid id',
+    method: 'GET',
+    rawPath: '/accounts/{{primaryAccountId}}',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Account contract is valid', accountSchema),
+      "pm.test('Account id matches requested id', function () {",
+      '    var json = pm.response.json();',
+      "    pm.expect(String(json.id)).to.eql(String(pm.collectionVariables.get('primaryAccountId')));",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Account - Unknown id',
+    method: 'GET',
+    rawPath: '/accounts/999999999',
+    tests: [
+      ...NO_SERVER_ERROR,
+      "pm.test('Unknown account does not return valid account data', function () {",
+      '    if (pm.response.code === 200 && pm.response.text().trim()) {',
+      '        var json = pm.response.json();',
+      "        pm.expect(json.id, 'unexpected account resolved for made-up id').to.be.undefined;",
+      '    }',
+      '});',
+    ],
+  }),
+  request({
+    name: 'Create Account - Savings',
+    method: 'POST',
+    rawPath: '/createAccount',
+    query: [
+      { key: 'customerId', value: '{{customerId}}' },
+      { key: 'newAccountType', value: '1' },
+      { key: 'fromAccountId', value: '{{primaryAccountId}}' },
+    ],
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Created account contract is valid', accountSchema),
+      "pm.test('Savings account is created and isolated for this run', function () {",
+      '    var json = pm.response.json();',
+      "    pm.expect(json.id).to.be.a('number');",
+      "    pm.expect(String(json.type).toUpperCase()).to.include('SAV');",
+      "    pm.collectionVariables.set('newAccountId', json.id);",
+      "    pm.collectionVariables.set('newAccountInitialBalance', Number(json.balance));",
+      '});',
+    ],
+  }),
+]);
 
-const customerFolder = folder(
-  '02 - Customer Profile',
-  'Customer lookup and update (GET /customers/{id}, POST /customers/update/{id}).',
-  [
-    request({
-      name: 'Get Customer - Valid id',
-      method: 'GET',
-      rawPath: '/customers/{{customerId}}',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Customer id matches requested id', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(String(json.id)).to.eql(String(pm.collectionVariables.get('customerId')));",
-        "    pm.collectionVariables.set('custFirstName', json.firstName || '');",
-        "    pm.collectionVariables.set('custLastName', json.lastName || '');",
-        "    pm.collectionVariables.set('custSsn', json.ssn || '');",
-        "    pm.collectionVariables.set('custPhone', json.phoneNumber || '');",
-        '    var addr = json.address || {};',
-        "    pm.collectionVariables.set('custStreet', addr.street || '');",
-        "    pm.collectionVariables.set('custCity', addr.city || '');",
-        "    pm.collectionVariables.set('custState', addr.state || '');",
-        "    pm.collectionVariables.set('custZip', addr.zipCode || '');",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Get Customer - Unknown id',
-      method: 'GET',
-      rawPath: '/customers/999999999',
-      description: 'Negative test with an id that should not exist on any ParaBank instance.',
-      tests: [
-        "pm.test('Unknown customer id does not return valid data', function () {",
-        '    if (pm.response.code === 200) {',
-        '        var body = pm.response.text();',
-        '        if (body && body.trim().length > 0) {',
-        '            var json = pm.response.json();',
-        "            pm.expect(json.id, 'unexpected customer resolved for a made-up id').to.be.undefined;",
-        '        }',
-        '    } else {',
-        '        pm.expect(pm.response.code).to.be.oneOf([404, 500]);',
-        '    }',
-        '});',
-      ],
-    }),
-    request({
-      name: 'Update Customer - Idempotent resubmit',
-      method: 'POST',
-      rawPath: '/customers/update/{{customerId}}',
-      query: [
-        { key: 'firstName', value: '{{custFirstName}}' },
-        { key: 'lastName', value: '{{custLastName}}' },
-        { key: 'street', value: '{{custStreet}}' },
-        { key: 'city', value: '{{custCity}}' },
-        { key: 'state', value: '{{custState}}' },
-        { key: 'zipCode', value: '{{custZip}}' },
-        { key: 'phoneNumber', value: '{{custPhone}}' },
-        { key: 'ssn', value: '{{custSsn}}' },
-        { key: 'username', value: '{{username}}' },
-        { key: 'password', value: '{{password}}' },
-      ],
-      description:
-        'Resubmits the exact same field values captured from "Get Customer - Valid id" so the endpoint is exercised without actually changing the shared demo account (safe to re-run).',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Update confirmation message returned', function () {",
-        '    var body = pm.response.text();',
-        "    pm.expect(body).to.be.a('string');",
-        '    pm.expect(body.length).to.be.above(0);',
-        '});',
-      ],
-    }),
-  ]
-);
+const moneyFolder = folder('04 - Money Movement', 'State-changing operations with post-condition balance validation.', [
+  request({
+    name: 'Deposit into new account',
+    method: 'POST',
+    rawPath: '/deposit',
+    query: [
+      { key: 'accountId', value: '{{newAccountId}}' },
+      { key: 'amount', value: '500' },
+    ],
+    tests: [...STATUS_200, "pm.test('Deposit returns confirmation', function () { pm.expect(pm.response.text()).to.not.be.empty; });"],
+  }),
+  request({
+    name: 'Verify balance after deposit',
+    method: 'GET',
+    rawPath: '/accounts/{{newAccountId}}',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Account contract is valid after deposit', accountSchema),
+      "pm.test('Deposit increased balance by exactly 500', function () {",
+      '    var json = pm.response.json();',
+      "    var initial = Number(pm.collectionVariables.get('newAccountInitialBalance'));",
+      '    pm.expect(Number(json.balance)).to.eql(initial + 500);',
+      "    pm.collectionVariables.set('newBalanceAfterDeposit', Number(json.balance));",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Pay Bill',
+    method: 'POST',
+    rawPath: '/billpay',
+    query: [
+      { key: 'accountId', value: '{{primaryAccountId}}' },
+      { key: 'amount', value: '15.00' },
+    ],
+    jsonBody: {
+      name: 'Acme Utilities',
+      address: { street: '500 Industrial Pkwy', city: 'Metropolis', state: 'IL', zipCode: '62960' },
+      phoneNumber: '555-0100',
+      accountNumber: 987654321,
+    },
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Bill pay contract is valid', billPaySchema),
+      "pm.test('Bill pay response matches request', function () {",
+      '    var json = pm.response.json();',
+      "    pm.expect(json.payeeName).to.eql('Acme Utilities');",
+      '    pm.expect(Number(json.amount)).to.eql(15);',
+      "    pm.expect(String(json.accountId)).to.eql(String(pm.collectionVariables.get('primaryAccountId')));",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Withdraw from new account',
+    method: 'POST',
+    rawPath: '/withdraw',
+    query: [
+      { key: 'accountId', value: '{{newAccountId}}' },
+      { key: 'amount', value: '100' },
+    ],
+    tests: [...STATUS_200, "pm.test('Withdrawal returns confirmation', function () { pm.expect(pm.response.text()).to.not.be.empty; });"],
+  }),
+  request({
+    name: 'Verify balance after withdrawal',
+    method: 'GET',
+    rawPath: '/accounts/{{newAccountId}}',
+    tests: [
+      ...STATUS_200,
+      "pm.test('Withdrawal decreased balance by exactly 100', function () {",
+      '    var json = pm.response.json();',
+      "    var before = Number(pm.collectionVariables.get('newBalanceAfterDeposit'));",
+      '    pm.expect(Number(json.balance)).to.eql(before - 100);',
+      "    pm.collectionVariables.set('recipientBalanceBeforeTransfer', Number(json.balance));",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Capture source balance before transfer',
+    method: 'GET',
+    rawPath: '/accounts/{{primaryAccountId}}',
+    tests: [
+      ...STATUS_200,
+      "pm.test('Source balance captured', function () {",
+      '    var json = pm.response.json();',
+      "    pm.expect(json.balance).to.be.a('number');",
+      "    pm.collectionVariables.set('sourceBalanceBeforeTransfer', Number(json.balance));",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Transfer - Valid accounts',
+    method: 'POST',
+    rawPath: '/transfer',
+    query: [
+      { key: 'fromAccountId', value: '{{primaryAccountId}}' },
+      { key: 'toAccountId', value: '{{newAccountId}}' },
+      { key: 'amount', value: '25' },
+    ],
+    tests: [
+      ...STATUS_200,
+      "pm.test('Transfer returns success confirmation', function () {",
+      "    pm.expect(pm.response.text().toLowerCase()).to.include('success');",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Verify source balance after transfer',
+    method: 'GET',
+    rawPath: '/accounts/{{primaryAccountId}}',
+    tests: [
+      ...STATUS_200,
+      "pm.test('Transfer debited source by exactly 25', function () {",
+      '    var json = pm.response.json();',
+      "    var before = Number(pm.collectionVariables.get('sourceBalanceBeforeTransfer'));",
+      '    pm.expect(Number(json.balance)).to.eql(before - 25);',
+      '});',
+    ],
+  }),
+  request({
+    name: 'Verify recipient balance after transfer',
+    method: 'GET',
+    rawPath: '/accounts/{{newAccountId}}',
+    tests: [
+      ...STATUS_200,
+      "pm.test('Transfer credited recipient by exactly 25', function () {",
+      '    var json = pm.response.json();',
+      "    var before = Number(pm.collectionVariables.get('recipientBalanceBeforeTransfer'));",
+      '    pm.expect(Number(json.balance)).to.eql(before + 25);',
+      '});',
+    ],
+  }),
+  request({
+    name: 'Transfer - Non-existent accounts',
+    method: 'POST',
+    rawPath: '/transfer',
+    query: [
+      { key: 'fromAccountId', value: '999999997' },
+      { key: 'toAccountId', value: '999999998' },
+      { key: 'amount', value: '10' },
+    ],
+    tests: [
+      ...NO_SERVER_ERROR,
+      "pm.test('Invalid transfer is not reported as successful', function () {",
+      "    pm.expect(pm.response.text().toLowerCase()).to.not.include('success');",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Withdraw - Oversized amount (exploratory)',
+    method: 'POST',
+    rawPath: '/withdraw',
+    query: [
+      { key: 'accountId', value: '{{newAccountId}}' },
+      { key: 'amount', value: '999999999' },
+    ],
+    description: 'Exploratory check kept after deterministic balance validations so it cannot corrupt earlier assertions.',
+    tests: [
+      ...NO_SERVER_ERROR,
+      "pm.test('Oversized withdrawal response is observable', function () {",
+      "    console.log('Oversized withdrawal -> status ' + pm.response.code + ', body: ' + pm.response.text());",
+      "    pm.expect(pm.response.text()).to.be.a('string');",
+      '});',
+    ],
+  }),
+]);
 
-// ---------------------------------------------------------------------------
-// 03 - Accounts
-// ---------------------------------------------------------------------------
+const transactionsFolder = folder('05 - Transactions', 'Transaction searches validate both contract and filtering semantics.', [
+  request({
+    name: 'Get Transactions for Account',
+    method: 'GET',
+    rawPath: '/accounts/{{primaryAccountId}}/transactions',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Transactions contract is valid', { type: 'array', minItems: 1, items: transactionSchema }),
+      "pm.test('Transfer transaction is present and captured', function () {",
+      '    var json = pm.response.json();',
+      "    var match = json.filter(function (tx) { return Number(tx.amount) === 25 && String(tx.type).toLowerCase() === 'debit'; }).pop();",
+      "    pm.expect(match, 'expected debit transfer of 25').to.not.be.undefined;",
+      "    pm.collectionVariables.set('transactionId', match.id);",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Transaction by Id',
+    method: 'GET',
+    rawPath: '/transactions/{{transactionId}}',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Transaction contract is valid', transactionSchema),
+      "pm.test('Transaction id matches requested id', function () {",
+      '    var json = pm.response.json();',
+      "    pm.expect(String(json.id)).to.eql(String(pm.collectionVariables.get('transactionId')));",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Transactions by Amount',
+    method: 'GET',
+    rawPath: '/accounts/{{primaryAccountId}}/transactions/amount/25',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Amount filter returns transaction array', { type: 'array', minItems: 1, items: transactionSchema }),
+      "pm.test('Every transaction matches amount 25', function () {",
+      '    pm.response.json().forEach(function (tx) { pm.expect(Number(tx.amount)).to.eql(25); });',
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Transactions by Month and Type',
+    method: 'GET',
+    rawPath: '/accounts/{{primaryAccountId}}/transactions/month/{{currentMonthName}}/type/DEBIT',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Month/type filter returns transaction array', { type: 'array', minItems: 1, items: transactionSchema }),
+      "pm.test('Every transaction matches requested type and month', function () {",
+      "    var moment = require('moment');",
+      "    var expectedMonth = String(pm.collectionVariables.get('currentMonthName')).toLowerCase();",
+      '    pm.response.json().forEach(function (tx) {',
+      "        pm.expect(String(tx.type).toLowerCase()).to.eql('debit');",
+      '        var parsed = moment(tx.date);',
+      "        pm.expect(parsed.isValid(), 'transaction date must be parseable').to.eql(true);",
+      "        pm.expect(parsed.format('MMMM').toLowerCase()).to.eql(expectedMonth);",
+      '    });',
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Transactions by Date Range',
+    method: 'GET',
+    rawPath: '/accounts/{{primaryAccountId}}/transactions/fromDate/{{sevenDaysAgoMDY}}/toDate/{{todayMDY}}',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Date-range filter returns transaction array', { type: 'array', minItems: 1, items: transactionSchema }),
+      "pm.test('Every transaction falls inside requested date range', function () {",
+      "    var moment = require('moment');",
+      "    var from = moment(pm.collectionVariables.get('sevenDaysAgoMDY'), 'MM-DD-YYYY').startOf('day');",
+      "    var to = moment(pm.collectionVariables.get('todayMDY'), 'MM-DD-YYYY').endOf('day');",
+      '    pm.response.json().forEach(function (tx) {',
+      '        var date = moment(tx.date);',
+      "        pm.expect(date.isValid(), 'transaction date must be parseable').to.eql(true);",
+      "        pm.expect(date.isBetween(from, to, undefined, '[]')).to.eql(true);",
+      '    });',
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Transactions on Date',
+    method: 'GET',
+    rawPath: '/accounts/{{primaryAccountId}}/transactions/onDate/{{todayMDY}}',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('On-date filter returns transaction array', { type: 'array', minItems: 1, items: transactionSchema }),
+      "pm.test('Every transaction matches requested calendar date', function () {",
+      "    var moment = require('moment');",
+      "    var expected = moment(pm.collectionVariables.get('todayMDY'), 'MM-DD-YYYY').format('YYYY-MM-DD');",
+      '    pm.response.json().forEach(function (tx) {',
+      '        var date = moment(tx.date);',
+      "        pm.expect(date.isValid(), 'transaction date must be parseable').to.eql(true);",
+      "        pm.expect(date.format('YYYY-MM-DD')).to.eql(expected);",
+      '    });',
+      '});',
+    ],
+  }),
+]);
 
-const accountsFolder = folder(
-  '03 - Accounts',
-  'Account listing/lookup and account creation.',
-  [
-    request({
-      name: 'Get Customer Accounts',
-      method: 'GET',
-      rawPath: '/customers/{{customerId}}/accounts',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Returns a non-empty array of accounts', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json).to.be.an('array');",
-        '    pm.expect(json.length).to.be.above(0);',
-        "    pm.collectionVariables.set('primaryAccountId', json[0].id);",
-        '});',
-        "pm.test('Each account has id/type/balance', function () {",
-        '    var json = pm.response.json();',
-        '    json.forEach(function (acc) {',
-        "        pm.expect(acc).to.have.property('id');",
-        "        pm.expect(acc).to.have.property('type');",
-        "        pm.expect(acc).to.have.property('balance');",
-        '    });',
-        '});',
-      ],
-    }),
-    request({
-      name: 'Get Account - Valid id',
-      method: 'GET',
-      rawPath: '/accounts/{{primaryAccountId}}',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Account id matches and balance is numeric', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(String(json.id)).to.eql(String(pm.collectionVariables.get('primaryAccountId')));",
-        "    pm.expect(json.balance).to.be.a('number');",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Get Account - Unknown id',
-      method: 'GET',
-      rawPath: '/accounts/999999999',
-      tests: [
-        "pm.test('Unknown account id does not return valid data', function () {",
-        '    if (pm.response.code === 200) {',
-        '        var body = pm.response.text();',
-        '        if (body && body.trim().length > 0) {',
-        '            var json = pm.response.json();',
-        "            pm.expect(json.id, 'unexpected account resolved for a made-up id').to.be.undefined;",
-        '        }',
-        '    } else {',
-        '        pm.expect(pm.response.code).to.be.oneOf([404, 500]);',
-        '    }',
-        '});',
-      ],
-    }),
-    request({
-      name: 'Create Account - Savings',
-      method: 'POST',
-      rawPath: '/createAccount',
-      query: [
-        { key: 'customerId', value: '{{customerId}}' },
-        { key: 'newAccountType', value: '1' },
-        { key: 'fromAccountId', value: '{{primaryAccountId}}' },
-      ],
-      description: 'newAccountType: 0 = CHECKING, 1 = SAVINGS. Creates a fresh account used by the rest of the suite.',
-      tests: [
-        ...STATUS_200,
-        "pm.test('New savings account is created with an id', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json).to.have.property('id');",
-        "    pm.collectionVariables.set('newAccountId', json.id);",
-        '});',
-      ],
-    }),
-  ]
-);
-
-// ---------------------------------------------------------------------------
-// 04 - Money Movement
-// ---------------------------------------------------------------------------
-
-const moneyFolder = folder(
-  '04 - Money Movement',
-  'Deposit, withdraw, transfer between accounts, and bill pay.',
-  [
-    request({
-      name: 'Deposit into new account',
-      method: 'POST',
-      rawPath: '/deposit',
-      query: [
-        { key: 'accountId', value: '{{newAccountId}}' },
-        { key: 'amount', value: '500' },
-      ],
-      tests: [
-        ...STATUS_200,
-        "pm.test('Deposit confirmation returned', function () {",
-        '    var body = pm.response.text();',
-        '    pm.expect(body.length).to.be.above(0);',
-        '});',
-      ],
-    }),
-    request({
-      name: 'Pay Bill',
-      method: 'POST',
-      rawPath: '/billpay',
-      query: [
-        { key: 'accountId', value: '{{primaryAccountId}}' },
-        { key: 'amount', value: '15.00' },
-      ],
-      jsonBody: {
-        name: 'Acme Utilities',
-        address: {
-          street: '500 Industrial Pkwy',
-          city: 'Metropolis',
-          state: 'IL',
-          zipCode: '62960',
-        },
-        phoneNumber: '555-0100',
-        accountNumber: 987654321,
-      },
-      description: 'Payee (request body) matches the Payee schema from the Swagger docs.',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Bill pay result matches payee, amount and source account', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json.payeeName).to.eql('Acme Utilities');",
-        '    pm.expect(Number(json.amount)).to.eql(15);',
-        "    pm.expect(String(json.accountId)).to.eql(String(pm.collectionVariables.get('primaryAccountId')));",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Withdraw from new account',
-      method: 'POST',
-      rawPath: '/withdraw',
-      query: [
-        { key: 'accountId', value: '{{newAccountId}}' },
-        { key: 'amount', value: '100' },
-      ],
-      tests: [
-        ...STATUS_200,
-        "pm.test('Withdraw confirmation returned', function () {",
-        '    var body = pm.response.text();',
-        '    pm.expect(body.length).to.be.above(0);',
-        '});',
-      ],
-    }),
-    request({
-      name: 'Withdraw - Oversized amount (overdraft check)',
-      method: 'POST',
-      rawPath: '/withdraw',
-      query: [
-        { key: 'accountId', value: '{{newAccountId}}' },
-        { key: 'amount', value: '999999999' },
-      ],
-      description:
-        'Exploratory/negative test: documents how the API behaves when asked to withdraw far more than the account balance, without assuming an unverified business rule.',
-      tests: [
-        "pm.test('Server handles an oversized withdrawal without a 5xx crash', function () {",
-        '    pm.expect(pm.response.code).to.be.below(500);',
-        '});',
-        "pm.test('Response body is logged for manual review of overdraft behaviour', function () {",
-        '    var body = pm.response.text();',
-        "    console.log('Oversized withdrawal -> status ' + pm.response.code + ', body: ' + body);",
-        "    pm.expect(body).to.be.a('string');",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Transfer - Valid accounts',
-      method: 'POST',
-      rawPath: '/transfer',
-      query: [
-        { key: 'fromAccountId', value: '{{primaryAccountId}}' },
-        { key: 'toAccountId', value: '{{newAccountId}}' },
-        { key: 'amount', value: '25' },
-      ],
-      tests: [
-        ...STATUS_200,
-        "pm.test('Transfer succeeded message returned', function () {",
-        '    var body = pm.response.text().toLowerCase();',
-        "    pm.expect(body).to.include('success');",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Transfer - Non-existent accounts',
-      method: 'POST',
-      rawPath: '/transfer',
-      query: [
-        { key: 'fromAccountId', value: '999999997' },
-        { key: 'toAccountId', value: '999999998' },
-        { key: 'amount', value: '10' },
-      ],
-      tests: [
-        "pm.test('Transfer between non-existent accounts is rejected or errors', function () {",
-        '    if (pm.response.code === 200) {',
-        '        var body = pm.response.text().toLowerCase();',
-        "        pm.expect(body).to.not.include('success');",
-        '    } else {',
-        '        pm.expect(pm.response.code).to.be.oneOf([400, 404, 500]);',
-        '    }',
-        '});',
-      ],
-    }),
-  ]
-);
-
-// ---------------------------------------------------------------------------
-// 05 - Transactions
-// ---------------------------------------------------------------------------
-
-const transactionsFolder = folder(
-  '05 - Transactions',
-  'Transaction search endpoints. Must run after "04 - Money Movement" so there is at least one transaction to find.',
-  [
-    request({
-      name: 'Get Transactions for Account',
-      method: 'GET',
-      rawPath: '/accounts/{{primaryAccountId}}/transactions',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Returns an array including the transfer just made', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json).to.be.an('array');",
-        '    pm.expect(json.length).to.be.above(0);',
-        '    var last = json[json.length - 1];',
-        "    pm.collectionVariables.set('transactionId', last.id);",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Get Transaction by Id',
-      method: 'GET',
-      rawPath: '/transactions/{{transactionId}}',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Transaction id matches requested id', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(String(json.id)).to.eql(String(pm.collectionVariables.get('transactionId')));",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Get Transactions by Amount',
-      method: 'GET',
-      rawPath: '/accounts/{{primaryAccountId}}/transactions/amount/25',
-      description: 'Matches the $25 transfer created in "04 - Money Movement".',
-      tests: [...STATUS_200, ...arrayResponseTest('Response is an array')],
-    }),
-    request({
-      name: 'Get Transactions by Month and Type',
-      method: 'GET',
-      rawPath: '/accounts/{{primaryAccountId}}/transactions/month/{{currentMonthName}}/type/DEBIT',
-      description: 'The Swagger docs describe accepted values for "type" as CREDIT/DEBIT (uppercase); the Transaction.type field itself serializes back as "Credit"/"Debit" in responses.',
-      tests: [...STATUS_200, ...arrayResponseTest('Response is an array')],
-    }),
-    request({
-      name: 'Get Transactions by Date Range',
-      method: 'GET',
-      rawPath: '/accounts/{{primaryAccountId}}/transactions/fromDate/{{sevenDaysAgoMDY}}/toDate/{{todayMDY}}',
-      description: 'Dates use MM-DD-YYYY, matching the format used by the ParaBank "Find Transactions" UI.',
-      tests: [...STATUS_200, ...arrayResponseTest('Response is an array')],
-    }),
-    request({
-      name: 'Get Transactions on Date',
-      method: 'GET',
-      rawPath: '/accounts/{{primaryAccountId}}/transactions/onDate/{{todayMDY}}',
-      tests: [...STATUS_200, ...arrayResponseTest('Response is an array')],
-    }),
-  ]
-);
-
-// ---------------------------------------------------------------------------
-// 06 - Loans
-// ---------------------------------------------------------------------------
-
-const loansFolder = folder('06 - Loans', 'Loan request endpoint under two different business scenarios.', [
+const loansFolder = folder('06 - Loans', 'Loan decisions with response contract validation.', [
   request({
     name: 'Request Loan - Small amount, high down payment',
     method: 'POST',
@@ -531,17 +611,13 @@ const loansFolder = folder('06 - Loans', 'Loan request endpoint under two differ
       { key: 'downPayment', value: '450' },
       { key: 'fromAccountId', value: '{{primaryAccountId}}' },
     ],
-    description: 'A small loan with a high down payment is likely (but not guaranteed) to be approved.',
     tests: [
       ...STATUS_200,
-      "pm.test('Loan response contains an approval decision', function () {",
+      ...schemaTest('Loan response contract is valid', loanSchema),
+      "pm.test('Loan response contains a decision', function () {",
       '    var json = pm.response.json();',
-      "    pm.expect(json).to.have.property('approved');",
-      "    pm.expect(json).to.have.property('responseDate');",
-      '    if (json.approved && json.accountId) {',
-      "        pm.collectionVariables.set('loanAccountId', json.accountId);",
-      '    }',
-      "    console.log('Small loan / high down payment -> approved =', json.approved);",
+      "    pm.expect(json.approved).to.be.a('boolean');",
+      "    if (json.approved && json.accountId) pm.collectionVariables.set('loanAccountId', json.accountId);",
       '});',
     ],
   }),
@@ -555,184 +631,125 @@ const loansFolder = folder('06 - Loans', 'Loan request endpoint under two differ
       { key: 'downPayment', value: '0' },
       { key: 'fromAccountId', value: '{{primaryAccountId}}' },
     ],
-    description: 'A $5,000,000 loan with zero down payment against a demo account should be denied.',
     tests: [
       ...STATUS_200,
-      "pm.test('Loan response contains an approval decision', function () {",
-      '    var json = pm.response.json();',
-      "    pm.expect(json).to.have.property('approved');",
-      '});',
-      "pm.test('Huge loan with no down payment is denied', function () {",
-      '    var json = pm.response.json();',
-      '    pm.expect(json.approved).to.eql(false);',
+      ...schemaTest('Loan denial contract is valid', loanSchema),
+      "pm.test('Huge loan with zero down payment is denied', function () {",
+      '    pm.expect(pm.response.json().approved).to.eql(false);',
       '});',
     ],
   }),
 ]);
 
-// ---------------------------------------------------------------------------
-// 07 - Investments (Positions)
-// ---------------------------------------------------------------------------
-
-const investmentsFolder = folder(
-  '07 - Investments (Positions)',
-  'Stock position buy/sell and lookup endpoints.',
-  [
-    request({
-      name: 'Buy Position - AAPL',
-      method: 'POST',
-      rawPath: '/customers/{{customerId}}/buyPosition',
-      query: [
-        { key: 'accountId', value: '{{primaryAccountId}}' },
-        { key: 'name', value: 'Apple Inc.' },
-        { key: 'symbol', value: 'AAPL' },
-        { key: 'shares', value: '10' },
-        { key: 'pricePerShare', value: '150.25' },
-      ],
-      tests: [
-        ...STATUS_200,
-        "pm.test('Position list returned and includes the new AAPL position', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json).to.be.an('array');",
-        "    var aapl = json.filter(function (p) { return p.symbol === 'AAPL'; }).pop();",
-        "    pm.expect(aapl, 'expected an AAPL position in the response').to.not.be.undefined;",
-        "    pm.collectionVariables.set('positionId', aapl.positionId);",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Get Positions for Customer',
-      method: 'GET',
-      rawPath: '/customers/{{customerId}}/positions',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Position list includes the AAPL position bought earlier', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json).to.be.an('array');",
-        '    var ids = json.map(function (p) { return String(p.positionId); });',
-        "    pm.expect(ids).to.include(String(pm.collectionVariables.get('positionId')));",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Get Position by Id',
-      method: 'GET',
-      rawPath: '/positions/{{positionId}}',
-      tests: [
-        ...STATUS_200,
-        "pm.test('Position id and symbol match', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(String(json.positionId)).to.eql(String(pm.collectionVariables.get('positionId')));",
-        "    pm.expect(json.symbol).to.eql('AAPL');",
-        '});',
-      ],
-    }),
-    request({
-      name: 'Get Position History',
-      method: 'GET',
-      rawPath: '/positions/{{positionId}}/{{thirtyDaysAgoYMD}}/{{todayYMD}}',
-      description:
-        'Date format for this endpoint is not documented; YYYY-MM-DD is assumed. Adjust thirtyDaysAgoYMD/todayYMD in the collection pre-request script if the live instance expects a different format.',
-      tests: [
-        "pm.test('Position history endpoint responds without a server error', function () {",
-        '    pm.expect(pm.response.code).to.be.below(500);',
-        '});',
-        "pm.test('When successful, history is returned as an array', function () {",
-        '    if (pm.response.code === 200) {',
-        "        pm.expect(pm.response.json()).to.be.an('array');",
-        '    }',
-        '});',
-      ],
-    }),
-    request({
-      name: 'Sell Position - AAPL',
-      method: 'POST',
-      rawPath: '/customers/{{customerId}}/sellPosition',
-      query: [
-        { key: 'accountId', value: '{{primaryAccountId}}' },
-        { key: 'positionId', value: '{{positionId}}' },
-        { key: 'shares', value: '10' },
-        { key: 'pricePerShare', value: '155.00' },
-      ],
-      tests: [
-        ...STATUS_200,
-        "pm.test('Position list returned after selling', function () {",
-        '    var json = pm.response.json();',
-        "    pm.expect(json).to.be.an('array');",
-        "    console.log('Remaining positions after full AAPL sell:', json.length);",
-        '});',
-      ],
-    }),
-  ]
-);
-
-// ---------------------------------------------------------------------------
-// 09 - Admin (destructive, opt-in only)
-// ---------------------------------------------------------------------------
+const investmentsFolder = folder('07 - Investments (Positions)', 'Position lifecycle with contract and identity checks.', [
+  request({
+    name: 'Buy Position - AAPL',
+    method: 'POST',
+    rawPath: '/customers/{{customerId}}/buyPosition',
+    query: [
+      { key: 'accountId', value: '{{primaryAccountId}}' },
+      { key: 'name', value: 'Apple Inc.' },
+      { key: 'symbol', value: 'AAPL' },
+      { key: 'shares', value: '10' },
+      { key: 'pricePerShare', value: '150.25' },
+    ],
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Positions contract is valid after buy', { type: 'array', minItems: 1, items: positionSchema }),
+      "pm.test('New AAPL position is present', function () {",
+      '    var json = pm.response.json();',
+      "    var aapl = json.filter(function (p) { return p.symbol === 'AAPL'; }).pop();",
+      "    pm.expect(aapl, 'expected AAPL position').to.not.be.undefined;",
+      "    pm.expect(Number(aapl.shares)).to.be.at.least(10);",
+      "    pm.collectionVariables.set('positionId', aapl.positionId);",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Positions for Customer',
+    method: 'GET',
+    rawPath: '/customers/{{customerId}}/positions',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Positions contract is valid', { type: 'array', items: positionSchema }),
+      "pm.test('Purchased position is returned', function () {",
+      '    var ids = pm.response.json().map(function (p) { return String(p.positionId); });',
+      "    pm.expect(ids).to.include(String(pm.collectionVariables.get('positionId')));",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Position by Id',
+    method: 'GET',
+    rawPath: '/positions/{{positionId}}',
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Position contract is valid', positionSchema),
+      "pm.test('Position id and symbol match', function () {",
+      '    var json = pm.response.json();',
+      "    pm.expect(String(json.positionId)).to.eql(String(pm.collectionVariables.get('positionId')));",
+      "    pm.expect(json.symbol).to.eql('AAPL');",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Get Position History',
+    method: 'GET',
+    rawPath: '/positions/{{positionId}}/{{thirtyDaysAgoYMD}}/{{todayYMD}}',
+    description: 'Date format remains environment-dependent; success responses are validated as arrays.',
+    tests: [
+      ...NO_SERVER_ERROR,
+      "pm.test('Successful history response is an array', function () {",
+      "    if (pm.response.code === 200) pm.expect(pm.response.json()).to.be.an('array');",
+      '});',
+    ],
+  }),
+  request({
+    name: 'Sell Position - AAPL',
+    method: 'POST',
+    rawPath: '/customers/{{customerId}}/sellPosition',
+    query: [
+      { key: 'accountId', value: '{{primaryAccountId}}' },
+      { key: 'positionId', value: '{{positionId}}' },
+      { key: 'shares', value: '10' },
+      { key: 'pricePerShare', value: '155.00' },
+    ],
+    tests: [
+      ...STATUS_200,
+      ...schemaTest('Positions contract is valid after sell', { type: 'array', items: positionSchema }),
+      "pm.test('Full sale removes or reduces the selected position', function () {",
+      "    var id = String(pm.collectionVariables.get('positionId'));",
+      '    var match = pm.response.json().filter(function (p) { return String(p.positionId) === id; })[0];',
+      '    if (match) pm.expect(Number(match.shares)).to.be.below(10);',
+      '});',
+    ],
+  }),
+]);
 
 const adminFolder = folder(
   '09 - Admin (DESTRUCTIVE - opt-in only)',
-  'Server-wide administrative endpoints. These affect every user of the target ParaBank instance and are NOT part of the default "npm test" run. ' +
-    'Only run this folder ("npm run test:admin") against an instance you own/control (e.g. a local ParaBank deployment), never against the shared public demo unless you accept resetting/wiping data for all concurrent users.',
+  'Destructive server-wide administration. Every request is blocked unless allowDestructive=true and baseUrl is not the public ParaBank host.',
   [
     request({
       name: 'Set Parameter',
       method: 'POST',
       rawPath: '/setParameter/{{adminParamName}}/{{adminParamValue}}',
-      description:
-        'Sets a server-side configuration parameter. adminParamName/adminParamValue are empty by default in the environment - fill them in with a parameter valid for your deployment before running.',
-      tests: [
-        "pm.test('Server handles the setParameter call without a 5xx crash', function () {",
-        '    pm.expect(pm.response.code).to.be.below(500);',
-        '});',
-      ],
+      prerequest: ADMIN_GUARD,
+      tests: [...NO_SERVER_ERROR],
     }),
-    request({
-      name: 'Shutdown JMS Listener',
-      method: 'POST',
-      rawPath: '/shutdownJmsListener',
-      tests: [...STATUS_200],
-    }),
-    request({
-      name: 'Startup JMS Listener',
-      method: 'POST',
-      rawPath: '/startupJmsListener',
-      description: 'Restarts the listener stopped by "Shutdown JMS Listener" so the pair is non-destructive when run together.',
-      tests: [...STATUS_200],
-    }),
-    request({
-      name: 'Initialize Database',
-      method: 'POST',
-      rawPath: '/initializeDB',
-      description:
-        'DESTRUCTIVE: resets the entire database to the default seed data (e.g. the john/demo account), discarding all data created by every user of this instance.',
-      tests: [...STATUS_200],
-    }),
-    request({
-      name: 'Clean Database',
-      method: 'POST',
-      rawPath: '/cleanDB',
-      description: 'MOST DESTRUCTIVE ENDPOINT: wipes the entire database, including all customers and accounts. Use with extreme caution.',
-      tests: [...STATUS_200],
-    }),
+    request({ name: 'Shutdown JMS Listener', method: 'POST', rawPath: '/shutdownJmsListener', prerequest: ADMIN_GUARD, tests: [...STATUS_200] }),
+    request({ name: 'Startup JMS Listener', method: 'POST', rawPath: '/startupJmsListener', prerequest: ADMIN_GUARD, tests: [...STATUS_200] }),
+    request({ name: 'Initialize Database', method: 'POST', rawPath: '/initializeDB', prerequest: ADMIN_GUARD, tests: [...STATUS_200] }),
+    request({ name: 'Clean Database', method: 'POST', rawPath: '/cleanDB', prerequest: ADMIN_GUARD, tests: [...STATUS_200] }),
   ]
 );
 
-// ---------------------------------------------------------------------------
-// Assemble collection
-// ---------------------------------------------------------------------------
-
 const collection = {
   info: {
-    _postman_id: uid(),
+    _postman_id: COLLECTION_ID,
     name: 'ParaBank REST API Tests',
     description:
-      'Automated Postman/Newman test suite for every REST endpoint exposed by the ParaBank demo application (' +
-      'https://parabank.parasoft.com/parabank/services/bank), derived from the JAX-RS annotations in ' +
-      'com.parasoft.parabank.service.ParaBankService (https://github.com/parasoft/parabank). ' +
-      'Folders 01-07 are safe to run repeatedly against the shared public demo instance and are chained: ' +
-      'later requests reuse ids captured from earlier ones (login -> customer -> accounts -> transactions/loans/positions). ' +
-      'Folder 09 contains destructive, server-wide admin endpoints and is opt-in only (see its description).',
+      'Automated Postman/Newman coverage for the ParaBank REST API. Endpoint coverage is complete, while assertions focus on response contracts, filtering semantics and state changes. Folders 01-07 are the default flow. Folder 09 is destructive and has an explicit execution guard.',
     schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
   },
   item: [authFolder, customerFolder, accountsFolder, moneyFolder, transactionsFolder, loansFolder, investmentsFolder, adminFolder],
@@ -741,6 +758,10 @@ const collection = {
     { key: 'customerId', value: '' },
     { key: 'primaryAccountId', value: '' },
     { key: 'newAccountId', value: '' },
+    { key: 'newAccountInitialBalance', value: '' },
+    { key: 'newBalanceAfterDeposit', value: '' },
+    { key: 'recipientBalanceBeforeTransfer', value: '' },
+    { key: 'sourceBalanceBeforeTransfer', value: '' },
     { key: 'transactionId', value: '' },
     { key: 'loanAccountId', value: '' },
     { key: 'positionId', value: '' },
@@ -761,8 +782,8 @@ const collection = {
   ],
 };
 
-const outPath = path.resolve(__dirname, '..', '..', '..', '..', 'home', 'user', 'testing-api', 'postman', 'ParaBank_API_Tests.postman_collection.json');
-// fallback: write next to script if the relative path above is wrong; we pass explicit target via argv instead.
-const target = process.argv[2] || outPath;
-fs.writeFileSync(target, JSON.stringify(collection, null, 2) + '\n');
+const outPath = path.resolve(__dirname, '..', 'postman', 'ParaBank_API_Tests.postman_collection.json');
+const target = path.resolve(process.argv[2] || outPath);
+fs.mkdirSync(path.dirname(target), { recursive: true });
+fs.writeFileSync(target, `${JSON.stringify(collection, null, 2)}\n`);
 console.log('Wrote', target);
