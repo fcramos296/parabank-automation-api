@@ -70,10 +70,19 @@ Além disso, foi observado que o cliente HTTP interno do Newman (`postman-reques
 passar pelo proxy configurado neste sandbox — um problema de compatibilidade Node 22 do próprio Newman/ambiente,
 não da collection.
 
+O mesmo bloqueio vale para a página de documentação Swagger/OpenAPI (`https://parabank.parasoft.com/parabank/api-docs/index.html`)
+e para um espelho público alternativo (`para.testar.org`): nenhum dos dois pôde ser aberto a partir desta sessão
+(o `WebFetch` retorna `EGRESS_BLOCKED` mesmo para domínios não relacionados, como `en.wikipedia.org` — confirmando
+que é uma política de allowlist geral do ambiente, não algo específico do ParaBank).
+
 Por isso, a suíte não pôde ser executada ao vivo contra `parabank.parasoft.com` a partir desta sessão. Em vez
-disso, a lógica de cada request/teste (parsing de resposta, encadeamento de variáveis, asserções) foi validada
-localmente com um mock HTTP descartável simulando os 26 endpoints: **27 requests, 54 test scripts e 107/108
-asserções passaram** (a única falha foi uma simplificação do mock, não um defeito na collection).
+disso, os nomes de campo de cada schema de resposta (`Account`, `Customer`, `Transaction`, `LoanResponse`,
+`Position`) foram conferidos diretamente nas classes de domínio Java do repositório oficial (mesmo serviço que a
+página Swagger documenta) — o que já corrigiu um erro real: `Position` serializa o id como `positionId`, não
+`id` (os testes da pasta `07` foram ajustados de acordo). Em seguida, a lógica de cada request/teste (parsing de
+resposta, encadeamento de variáveis, asserções) foi validada localmente com um mock HTTP descartável simulando
+os 26 endpoints: **27 requests, 54 test scripts e 79/80 asserções passaram** (a única falha foi uma simplificação
+do mock, não um defeito na collection).
 
 **Rode `npm test` no seu ambiente local/CI (sem esse bloqueio de rede)** para validar contra o servidor real.
 Dois pontos podem exigir ajuste fino após a primeira execução real, pois não puderam ser confirmados

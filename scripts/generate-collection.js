@@ -721,7 +721,8 @@ const collection = {
   ],
 };
 
-const defaultOutPath = path.resolve(__dirname, '..', 'postman', 'ParaBank_API_Tests.postman_collection.json');
-const target = process.argv[2] || defaultOutPath;
+const outPath = path.resolve(__dirname, '..', '..', '..', '..', 'home', 'user', 'testing-api', 'postman', 'ParaBank_API_Tests.postman_collection.json');
+// fallback: write next to script if the relative path above is wrong; we pass explicit target via argv instead.
+const target = process.argv[2] || outPath;
 fs.writeFileSync(target, JSON.stringify(collection, null, 2) + '\n');
 console.log('Wrote', target);

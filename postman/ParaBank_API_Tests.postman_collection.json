@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "154b7667-412c-454c-8664-bf49b25f2d7e",
+    "_postman_id": "998ef7e3-79db-491e-880e-322002430aa7",
     "name": "ParaBank REST API Tests",
     "description": "Automated Postman/Newman test suite for every REST endpoint exposed by the ParaBank demo application (https://parabank.parasoft.com/parabank/services/bank), derived from the JAX-RS annotations in com.parasoft.parabank.service.ParaBankService (https://github.com/parasoft/parabank). Folders 01-07 are safe to run repeatedly against the shared public demo instance and are chained: later requests reuse ids captured from earlier ones (login -> customer -> accounts -> transactions/loans/positions). Folder 09 contains destructive, server-wide admin endpoints and is opt-in only (see its description).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -1201,7 +1201,7 @@
                   "    pm.expect(json).to.be.an('array');",
                   "    var aapl = json.filter(function (p) { return p.symbol === 'AAPL'; }).pop();",
                   "    pm.expect(aapl, 'expected an AAPL position in the response').to.not.be.undefined;",
-                  "    pm.collectionVariables.set('positionId', aapl.id);",
+                  "    pm.collectionVariables.set('positionId', aapl.positionId);",
                   "});"
                 ]
               }
@@ -1267,7 +1267,7 @@
                   "pm.test('Position list includes the AAPL position bought earlier', function () {",
                   "    var json = pm.response.json();",
                   "    pm.expect(json).to.be.an('array');",
-                  "    var ids = json.map(function (p) { return String(p.id); });",
+                  "    var ids = json.map(function (p) { return String(p.positionId); });",
                   "    pm.expect(ids).to.include(String(pm.collectionVariables.get('positionId')));",
                   "});"
                 ]
@@ -1311,7 +1311,7 @@
                   "});",
                   "pm.test('Position id and symbol match', function () {",
                   "    var json = pm.response.json();",
-                  "    pm.expect(String(json.id)).to.eql(String(pm.collectionVariables.get('positionId')));",
+                  "    pm.expect(String(json.positionId)).to.eql(String(pm.collectionVariables.get('positionId')));",
                   "    pm.expect(json.symbol).to.eql('AAPL');",
                   "});"
                 ]
