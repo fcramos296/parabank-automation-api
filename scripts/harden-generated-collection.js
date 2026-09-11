@@ -101,12 +101,16 @@ if (!money.item.some((item) => item.name === 'Capture persisted balance before d
 }
 
 // 2) ParaBank TransactionType is case-sensitive (Credit/Debit), despite some
-// documentation examples using uppercase values.
+// documentation examples using uppercase values. Its transaction timestamps are
+// serialized in UTC, so the month assertion must also stay in UTC.
 const transactions = folder(collection, '05 - Transactions');
 const monthType = request(transactions, 'Get Transactions by Month and Type');
 monthType.request.url.raw = monthType.request.url.raw.replace('/type/DEBIT', '/type/Debit');
 monthType.request.url.path = monthType.request.url.path.map((part) => (part === 'DEBIT' ? 'Debit' : part));
 guardJsonTests(monthType);
+testEvent(monthType).script.exec = testEvent(monthType).script.exec.map((line) =>
+  line.replace('var parsed = moment(tx.date);', 'var parsed = moment.utc(tx.date);')
+);
 
 // 3) Transaction timestamps are serialized in UTC. Calendar-date assertions
 // must stay in UTC or clients west of UTC can observe the previous local day.
