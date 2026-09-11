@@ -1,12 +1,18 @@
 {
   "name": "parabank-api-tests",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Postman/Newman API test suite for the ParaBank REST API (https://parabank.parasoft.com)",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "generate": "node scripts/generate-collection.js",
-    "test": "rimraf allure-results && newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"01 - Authentication\" --folder \"02 - Customer Profile\" --folder \"03 - Accounts\" --folder \"04 - Money Movement\" --folder \"05 - Transactions\" --folder \"06 - Loans\" --folder \"07 - Investments (Positions)\" --reporters cli,junit,htmlextra,allure --reporter-junit-export newman/report.xml --reporter-htmlextra-export newman/report.html",
-    "test:cli": "newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"01 - Authentication\" --folder \"02 - Customer Profile\" --folder \"03 - Accounts\" --folder \"04 - Money Movement\" --folder \"05 - Transactions\" --folder \"06 - Loans\" --folder \"07 - Investments (Positions)\"",
+    "generate:check": "node scripts/check-generated.js",
+    "validate:syntax": "node --check scripts/generate-collection.js && node --check scripts/check-generated.js",
+    "quality": "npm run validate:syntax && npm run generate:check",
+    "test": "npm run generate:check && rimraf allure-results && newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"01 - Authentication\" --folder \"02 - Customer Profile\" --folder \"03 - Accounts\" --folder \"04 - Money Movement\" --folder \"05 - Transactions\" --folder \"06 - Loans\" --folder \"07 - Investments (Positions)\" --reporters cli,junit,htmlextra,allure --reporter-junit-export newman/report.xml --reporter-htmlextra-export newman/report.html",
+    "test:cli": "npm run generate:check && newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"01 - Authentication\" --folder \"02 - Customer Profile\" --folder \"03 - Accounts\" --folder \"04 - Money Movement\" --folder \"05 - Transactions\" --folder \"06 - Loans\" --folder \"07 - Investments (Positions)\"",
     "test:admin": "newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"09 - Admin (DESTRUCTIVE - opt-in only)\" --reporters cli",
     "report:allure:generate": "allure generate allure-results --clean -o allure-report",
     "report:allure:open": "allure open allure-report",
