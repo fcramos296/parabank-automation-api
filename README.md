@@ -2,206 +2,280 @@
 
 # 🏦 ParaBank API Test Suite
 
-**Suíte de testes de API automatizados para o [ParaBank](https://parabank.parasoft.com/), a aplicação de demonstração bancária da Parasoft.**
+**Suíte automatizada de testes REST para o ParaBank com Postman/Newman, validações de contrato, regras de negócio e CI.**
 
-Postman • Newman • Allure Report
+Postman • Newman • JSON Schema • GitHub Actions • Allure
 
 ![Postman](https://img.shields.io/badge/Postman-Collection%20v2.1-FF6C37?logo=postman&logoColor=white)
 ![Newman](https://img.shields.io/badge/tested%20with-Newman-FF6C37?logo=postman&logoColor=white)
 ![Allure](https://img.shields.io/badge/reports-Allure-EE3939?logo=qameta&logoColor=white)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)
-![Coverage](https://img.shields.io/badge/endpoints-27%2F27-brightgreen)
+![Coverage](https://img.shields.io/badge/endpoint%20coverage-27%2F27-brightgreen)
 
 </div>
 
 ---
 
-## Índice
-
-- [Visão geral](#visão-geral)
-- [Cobertura da API](#cobertura-da-api)
-- [Fluxo de execução](#fluxo-de-execução)
-- [Estrutura do projeto](#estrutura-do-projeto)
-- [Pré-requisitos](#pré-requisitos)
-- [Como rodar](#como-rodar)
-- [Relatórios](#relatórios)
-- [Pasta `09 - Admin` (opt-in, destrutiva)](#pasta-09---admin-opt-in-destrutiva)
-- [Notas de validação e decisões técnicas](#notas-de-validação-e-decisões-técnicas)
-
----
-
 ## Visão geral
 
-Este projeto cobre **100% dos 27 endpoints REST** do ParaBank (`/parabank/services/bank`, OpenAPI 3.0) com uma
-collection Postman gerada programaticamente e executada via Newman. Os cenários incluem tanto caminhos felizes
-quanto casos negativos (credenciais inválidas, IDs inexistentes, contas inexistentes), com variáveis encadeadas
-entre requests para simular um fluxo de usuário real — login → contas → movimentações → extrato → empréstimo →
-investimentos.
+O projeto cobre **27/27 endpoints REST do ParaBank** (`/parabank/services/bank`) e separa cobertura de endpoint de profundidade de validação.
 
-| | |
-|---|---|
-| **Endpoints cobertos** | 27 / 27 |
-| **Requests na collection** | 28 |
-| **Test scripts** | 56 |
-| **Asserções** | 83 |
-| **Formato da collection** | Postman Collection v2.1 |
-| **Runner** | Newman (CLI) |
-| **Relatórios** | CLI · JUnit XML · HTML (htmlextra) · Allure |
+Além de verificar status HTTP, a suíte valida:
 
-## Cobertura da API
+- contratos de resposta com **JSON Schema**;
+- efeitos reais de `deposit`, `withdraw` e `transfer` através de saldo antes/depois;
+- semântica dos filtros de transações por valor, mês/tipo e datas;
+- identidade dos recursos criados e consultados;
+- cenários negativos sem considerar `5xx` como comportamento aceitável;
+- endpoints administrativos com **bloqueio preventivo contra o ambiente público**.
 
-A lista de endpoints e os schemas de resposta foram conferidos contra a documentação Swagger UI oficial
-(`/parabank/api-docs/index.html`) e contra o código-fonte (`ParaBankService.java` e classes de domínio em
-[parasoft/parabank](https://github.com/parasoft/parabank)).
+A collection possui **38 requests**: os 27 endpoints da API mais requests adicionais usados para validar pós-condições de operações que alteram estado.
 
-| Pasta da collection | Endpoints |
-|---|---|
-| `01 · Authentication` | `GET /login/{username}/{password}` |
-| `02 · Customer Profile` | `GET /customers/{id}` · `POST /customers/update/{id}` |
-| `03 · Accounts` | `GET /customers/{id}/accounts` · `GET /accounts/{id}` · `POST /createAccount` |
-| `04 · Money Movement` | `POST /billpay` · `POST /deposit` · `POST /withdraw` · `POST /transfer` |
-| `05 · Transactions` | `GET /accounts/{id}/transactions` (+ `/amount`, `/month/{}/type/{}`, `/fromDate/{}/toDate/{}`, `/onDate/{}`) · `GET /transactions/{id}` |
-| `06 · Loans` | `POST /requestLoan` |
-| `07 · Investments (Positions)` | `POST /customers/{id}/buyPosition` · `POST /customers/{id}/sellPosition` · `GET /customers/{id}/positions` · `GET /positions/{id}` · `GET /positions/{id}/{startDate}/{endDate}` |
-| `09 · Admin` 🔒 | `POST /setParameter/{name}/{value}` · `POST /shutdownJmsListener` · `POST /startupJmsListener` · `POST /initializeDB` · `POST /cleanDB` |
+## Estratégia de arquitetura
 
-> `POST /billpay` recebe o payee como corpo JSON (schema `Payee`: `name`, `address{street,city,state,zipCode}`,
-> `phoneNumber`, `accountNumber`) além de `accountId`/`amount` como query params, respondendo com `BillPayResult`
-> (`payeeName`, `amount`, `accountId`).
+`scripts/generate-collection.js` é a única fonte da verdade da collection.
 
-## Fluxo de execução
-
-As pastas `01`–`07` são encadeadas via variáveis de collection: cada request reaproveita dados capturados pelas
-requests anteriores, simulando a jornada de um usuário real na aplicação.
-
-```mermaid
-flowchart LR
-    A["01 · Authentication\nlogin"] -->|customerId| B["02 · Customer\nProfile"]
-    A -->|customerId| C["03 · Accounts"]
-    C -->|primaryAccountId\nnewAccountId| D["04 · Money\nMovement"]
-    D -->|transações geradas| E["05 · Transactions"]
-    C -->|primaryAccountId| F["06 · Loans"]
-    C -->|primaryAccountId| G["07 · Investments\n(Positions)"]
-
-    style A fill:#FF6C37,color:#fff
-    style C fill:#FF6C37,color:#fff
-```
-
-A pasta `09 - Admin` fica **fora** desse fluxo e do `npm test` padrão — ela afeta a instância inteira (todos os
-usuários simultâneos do ambiente compartilhado) e só roda sob demanda (veja [mais abaixo](#pasta-09---admin-opt-in-destrutiva)).
-
-## Estrutura do projeto
+O JSON gerado **não é versionado**. Isso elimina o risco de manter o gerador e uma collection commitada fora de sincronia.
 
 ```text
 testing-api/
+├── .github/
+│   └── workflows/
+│       ├── quality.yml                  # quality gate determinístico em push/PR
+│       └── live-api.yml                 # regressão live sob demanda
 ├── postman/
-│   ├── ParaBank_API_Tests.postman_collection.json   # collection Postman v2.1 (27 endpoints)
-│   └── ParaBank.postman_environment.json            # environment (baseUrl, credenciais)
+│   └── ParaBank.postman_environment.json
 ├── scripts/
-│   └── generate-collection.js                       # gera a collection programaticamente (fonte da verdade)
-├── package.json                                      # scripts npm (test, report, generate)
+│   ├── generate-collection.js           # fonte da verdade
+│   └── check-generated.js               # valida geração, cobertura e safety guards
+├── package.json
+├── package-lock.json
 └── README.md
 ```
 
-> A collection é **gerada**, não editada manualmente — `scripts/generate-collection.js` é a fonte da verdade
-> para as ~30 requests e seus test scripts. Depois de alterar o gerador, rode `npm run generate` para regravar o
-> JSON da collection.
+`npm test` executa automaticamente `npm run generate` antes do Newman.
 
-## Pré-requisitos
+## Cobertura da API
+
+| Área | Endpoints principais |
+|---|---|
+| Authentication | `GET /login/{username}/{password}` |
+| Customer | `GET /customers/{id}` · `POST /customers/update/{id}` |
+| Accounts | `GET /customers/{id}/accounts` · `GET /accounts/{id}` · `POST /createAccount` |
+| Money movement | `POST /billpay` · `POST /deposit` · `POST /withdraw` · `POST /transfer` |
+| Transactions | consulta geral, por id, valor, mês/tipo, intervalo e data |
+| Loans | `POST /requestLoan` |
+| Positions | buy · sell · list · get · history |
+| Admin | `setParameter` · JMS stop/start · `initializeDB` · `cleanDB` |
+
+O quality gate verifica programaticamente que todos os **27 endpoints obrigatórios** continuam presentes na collection gerada.
+
+## Qualidade das asserções
+
+### Contratos
+
+Os principais payloads (`Customer`, `Account`, `Transaction`, `LoanResponse`, `Position` e `BillPayResult`) possuem validação de JSON Schema.
+
+Isso permite detectar mudanças de contrato mesmo quando o endpoint continua retornando `200`.
+
+### Operações financeiras
+
+A suíte não considera apenas uma mensagem de sucesso como evidência suficiente.
+
+Exemplo do fluxo de transferência:
+
+```text
+captura saldo origem + destino
+          ↓
+POST /transfer (25)
+          ↓
+GET origem  → saldo anterior - 25
+GET destino → saldo anterior + 25
+```
+
+O mesmo princípio é utilizado para depósito e saque.
+
+### Filtros de transação
+
+Os endpoints de busca validam o conteúdo retornado:
+
+- `/amount/25`: todas as transações devem ter valor `25`;
+- `/month/{month}/type/DEBIT`: tipo e mês devem corresponder ao filtro;
+- intervalo de datas: todas as datas devem estar dentro do período;
+- `onDate`: todas as transações devem corresponder à data solicitada.
+
+Assim, um backend que simplesmente ignorasse o filtro não passaria nos testes.
+
+## Quality gate
+
+```bash
+npm ci
+npm run quality
+```
+
+`npm run quality` valida:
+
+1. sintaxe dos scripts Node;
+2. geração determinística da collection;
+3. ID estável da collection;
+4. presença dos 27 endpoints esperados;
+5. presença do safety guard em todos os endpoints administrativos.
+
+O workflow `.github/workflows/quality.yml` executa esse gate automaticamente em `push` e `pull_request` sem depender do ParaBank público.
+
+## Como executar
+
+### Pré-requisitos
 
 | Ferramenta | Versão | Uso |
 |---|---|---|
-| [Node.js](https://nodejs.org/) | ≥ 18 | Newman + gerador da collection |
-| [Java (JRE)](https://adoptium.net/) | ≥ 8 | CLI do Allure (`allure generate` / `allure open`) |
+| Node.js | ≥ 18 | generator + Newman |
+| Java/JRE | ≥ 8 | geração/abertura do relatório Allure |
 
-## Como rodar
+Instale as dependências:
 
 ```bash
-npm install
-
-npm test          # roda as pastas 01-07 (seguras) + relatórios CLI/JUnit/HTML/Allure
-npm run test:cli  # mesma coisa, só saída no terminal (sem gerar relatórios em arquivo)
+npm ci
 ```
 
-Variáveis do environment (`postman/ParaBank.postman_environment.json`):
+### Suite completa não destrutiva
+
+```bash
+npm test
+```
+
+O comando gera a collection e executa as pastas `01`–`07`.
+
+### Somente terminal
+
+```bash
+npm run test:cli
+```
+
+### Gerar collection para importar no Postman
+
+```bash
+npm run generate
+```
+
+Arquivo gerado:
+
+```text
+postman/ParaBank_API_Tests.postman_collection.json
+```
+
+O arquivo é um build artifact e está no `.gitignore`.
+
+## Configuração
+
+Environment padrão: `postman/ParaBank.postman_environment.json`.
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `baseUrl` | `https://parabank.parasoft.com/parabank/services/bank` | Base da API |
-| `username` | `john` | Conta de demonstração publicamente documentada do ParaBank |
-| `password` | `demo` | — |
+| `baseUrl` | `https://parabank.parasoft.com/parabank/services/bank` | endpoint base |
+| `username` | `john` | usuário demo |
+| `password` | `demo` | senha demo |
+| `allowDestructive` | `false` | habilitação explícita dos endpoints admin |
 
-Ajuste-as (ou passe `--env-var chave=valor` ao Newman) para apontar para outra instância/conta.
+As variáveis podem ser sobrescritas pelo Newman:
+
+```bash
+npm run test:cli -- --env-var username=meu_usuario --env-var password=minha_senha
+```
+
+## Endpoints administrativos: proteção obrigatória
+
+A pasta `09 - Admin (DESTRUCTIVE - opt-in only)` contém operações que podem alterar toda a instância do ParaBank.
+
+Todos os requests dessa pasta possuem um pre-request guard que exige simultaneamente:
+
+1. `allowDestructive=true`;
+2. `baseUrl` **não pode** apontar para `parabank.parasoft.com`.
+
+Portanto, mesmo uma habilitação acidental não permite `cleanDB`/`initializeDB` contra o demo público.
+
+Exemplo para uma instância local controlada:
+
+```bash
+npm run test:admin -- \
+  --env-var baseUrl=http://localhost:8080/parabank/services/bank \
+  --env-var allowDestructive=true
+```
+
+## CI/CD
+
+### Quality Gate
+
+`.github/workflows/quality.yml`
+
+Executa em push e PR:
+
+```text
+checkout → Node 20 → npm ci → npm run quality
+```
+
+Não depende de rede para o ParaBank e deve ser determinístico.
+
+### Live API Regression
+
+`.github/workflows/live-api.yml`
+
+Executado manualmente via `workflow_dispatch` porque o ParaBank público é um ambiente externo e compartilhado.
+
+O job executa `npm test` e publica como artifacts:
+
+- `newman/report.xml`;
+- `newman/report.html`;
+- `allure-results/`.
+
+Essa separação impede que indisponibilidade/rate limiting de um ambiente externo quebre o quality gate de código.
 
 ## Relatórios
 
-| Comando | Saída |
-|---|---|
-| `npm test` | CLI + `newman/report.xml` (JUnit) + `newman/report.html` (htmlextra) + `allure-results/` |
-| `npm run report:allure:generate` | Converte `allure-results/` em `allure-report/` (HTML navegável) |
-| `npm run report:allure:open` | Abre `allure-report/` num servidor local |
-| `npm run test:allure` | Roda os três passos acima em sequência |
+`npm test` gera:
 
-`allure-results/` é limpo no início de cada `npm test`, para não acumular execuções antigas, e não é versionado
-(está no `.gitignore`). O relatório Allure traz, por request: status (passed/failed/broken), duração, cada
-`pm.test()` como um step, e os dados brutos de request/response (URL, headers, body) como anexos — útil para
-depurar uma falha sem rodar a collection de novo no Postman.
+- saída CLI;
+- JUnit XML em `newman/report.xml`;
+- HTML em `newman/report.html`;
+- resultados Allure em `allure-results/`.
 
-> **Java é obrigatório** para o CLI do Allure (pacote `allure-commandline`, incluído nas `devDependencies`) — é
-> uma dependência do próprio Allure, não do Node. Sem Java, `allure generate`/`allure open` falham mesmo com os
-> pacotes npm instalados.
-
-## Pasta `09 - Admin` (opt-in, destrutiva)
+Para gerar e abrir o Allure:
 
 ```bash
-npm run test:admin
+npm run report:allure:generate
+npm run report:allure:open
 ```
 
-Cobre os 5 endpoints administrativos restantes: `initializeDB` (reseta todos os dados para o estado padrão),
-`cleanDB` (apaga o banco inteiro), `setParameter` e o par `shutdownJmsListener`/`startupJmsListener`.
+ou:
 
-> ⚠️ **Não rode isso contra o ambiente público compartilhado** a menos que você aceite resetar/apagar os dados de
-> todos os usuários simultâneos. Use apenas contra uma instância própria (ex.: ParaBank rodando localmente via
-> Docker/Maven).
+```bash
+npm run test:allure
+```
 
-## Notas de validação e decisões técnicas
+## Decisões e limitações conhecidas
 
-<details>
-<summary><strong>Como a cobertura foi validada</strong> (o ambiente de desenvolvimento não tinha acesso direto ao ParaBank ao vivo)</summary>
+### Ambiente público compartilhado
 
-<br>
+O ParaBank público não oferece isolamento de dados por execução. A suíte cria uma nova conta para o fluxo principal, reduzindo colisões, mas utiliza por padrão o usuário público `john/demo`.
 
-O ambiente onde este projeto foi desenvolvido bloqueia acesso de rede a `parabank.parasoft.com` por política
-organizacional. Para garantir a fidelidade da collection mesmo assim, a validação seguiu duas frentes:
+Para maior previsibilidade em um cenário real, utilize uma instância dedicada e credenciais exclusivas.
 
-1. **Especificação oficial**: o usuário exportou a documentação Swagger UI real (`/parabank/api-docs/index.html`)
-   em PDF, permitindo conferir todos os 27 endpoints, parâmetros e schemas de resposta contra a especificação
-   OpenAPI oficial — o que revelou e corrigiu um endpoint inteiro faltando (`POST /billpay`) e um campo de
-   resposta incorreto (`Position` serializa o id como `positionId`, não `id`).
-2. **Validação funcional**: a lógica de cada request/teste (parsing de resposta, encadeamento de variáveis,
-   asserções) foi validada rodando a collection completa contra um mock HTTP local que replica os 27 endpoints —
-   28 requests, 56 test scripts, 83 asserções, com apenas 1 falha esperada (uma simplificação do mock, não um
-   defeito na collection).
+### Cenários negativos e HTTP 5xx
 
-Dois comportamentos não puderam ser confirmados nem pela documentação nem pelo mock, por dependerem de regras de
-negócio internas do servidor real:
+Erros de servidor não são aceitos como resposta válida para entradas negativas. Se o ParaBank retornar `500` para uma credencial/ID inválido, o teste falha deliberadamente e evidencia um problema de robustez da API em vez de mascará-lo como resultado esperado.
 
-- **Formato de data** de `GET /positions/{id}/{startDate}/{endDate}` (histórico de posição) — assumido
-  `yyyy-MM-dd`. Se a instância real esperar outro formato, ajuste `thirtyDaysAgoYMD`/`todayYMD` no pre-request
-  script da collection.
-- **Comportamento de limite** em `POST /withdraw` (saque acima do saldo) e `POST /requestLoan` (valores
-  extremos) — os testes documentam o comportamento observado via `console.log` em vez de travar numa regra de
-  negócio não confirmada.
+### Overdraft
 
-Recomenda-se rodar `npm test` num ambiente com acesso de rede ao ParaBank para validar esses dois pontos contra o
-servidor real.
+O saque acima do saldo permanece como cenário exploratório porque a regra de negócio não está formalizada como restrição estável da API. Ele é executado **depois** das validações determinísticas de saldo para não contaminar os testes anteriores.
 
-</details>
+### Histórico de posições
+
+O formato aceito pelo endpoint de histórico de posição não é explicitamente tipado pela API. A suíte mantém a convenção `YYYY-MM-DD` e valida que a chamada não cause falha de servidor; respostas `200` devem ser arrays.
 
 ---
 
 <div align="center">
 
-Feito para exercitar a [API REST do ParaBank](https://parabank.parasoft.com/) — um projeto de demonstração/estudo da Parasoft.
+Projeto de automação de API com foco em **contrato, comportamento, confiabilidade e execução contínua**, não apenas em cobertura nominal de endpoints.
 
 </div>
