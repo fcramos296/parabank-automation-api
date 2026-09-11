@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "998ef7e3-79db-491e-880e-322002430aa7",
+    "_postman_id": "c2a0be39-cd74-40c7-8565-b0ea0b57eaab",
     "name": "ParaBank REST API Tests",
     "description": "Automated Postman/Newman test suite for every REST endpoint exposed by the ParaBank demo application (https://parabank.parasoft.com/parabank/services/bank), derived from the JAX-RS annotations in com.parasoft.parabank.service.ParaBankService (https://github.com/parasoft/parabank). Folders 01-07 are safe to run repeatedly against the shared public demo instance and are chained: later requests reuse ids captured from earlier ones (login -> customer -> accounts -> transactions/loans/positions). Folder 09 contains destructive, server-wide admin endpoints and is opt-in only (see its description).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -504,7 +504,7 @@
     },
     {
       "name": "04 - Money Movement",
-      "description": "Deposit, withdraw and transfer between accounts.",
+      "description": "Deposit, withdraw, transfer between accounts, and bill pay.",
       "item": [
         {
           "name": "Deposit into new account",
@@ -554,6 +554,72 @@
               ]
             },
             "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Pay Bill",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Bill pay result matches payee, amount and source account', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.payeeName).to.eql('Acme Utilities');",
+                  "    pm.expect(Number(json.amount)).to.eql(15);",
+                  "    pm.expect(String(json.accountId)).to.eql(String(pm.collectionVariables.get('primaryAccountId')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/billpay?accountId={{primaryAccountId}}&amount=15.00",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "billpay"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{primaryAccountId}}"
+                },
+                {
+                  "key": "amount",
+                  "value": "15.00"
+                }
+              ]
+            },
+            "description": "Payee (request body) matches the Payee schema from the Swagger docs.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Utilities\",\n  \"address\": {\n    \"street\": \"500 Industrial Pkwy\",\n    \"city\": \"Metropolis\",\n    \"state\": \"IL\",\n    \"zipCode\": \"62960\"\n  },\n  \"phoneNumber\": \"555-0100\",\n  \"accountNumber\": 987654321\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         },
@@ -937,7 +1003,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/accounts/{{primaryAccountId}}/transactions/month/{{currentMonthName}}/type/Debit",
+              "raw": "{{baseUrl}}/accounts/{{primaryAccountId}}/transactions/month/{{currentMonthName}}/type/DEBIT",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -948,10 +1014,10 @@
                 "month",
                 "{{currentMonthName}}",
                 "type",
-                "Debit"
+                "DEBIT"
               ]
             },
-            "description": ""
+            "description": "The Swagger docs describe accepted values for \"type\" as CREDIT/DEBIT (uppercase); the Transaction.type field itself serializes back as \"Credit\"/\"Debit\" in responses."
           },
           "response": []
         },

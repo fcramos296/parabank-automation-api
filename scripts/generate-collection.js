@@ -37,18 +37,27 @@ function url(rawPath, query) {
   return u;
 }
 
-function request({ name, method, rawPath, query, description, tests, prerequest }) {
+function request({ name, method, rawPath, query, description, tests, prerequest, jsonBody }) {
+  const header = [{ key: 'Accept', value: 'application/json' }];
   const item = {
     name,
     event: [],
     request: {
       method,
-      header: [{ key: 'Accept', value: 'application/json' }],
+      header,
       url: url(rawPath, query),
       description: description || '',
     },
     response: [],
   };
+  if (jsonBody) {
+    header.push({ key: 'Content-Type', value: 'application/json' });
+    item.request.body = {
+      mode: 'raw',
+      raw: JSON.stringify(jsonBody, null, 2),
+      options: { raw: { language: 'json' } },
+    };
+  }
   if (prerequest && prerequest.length) {
     item.event.push(scriptEvent('prerequest', prerequest));
   }
@@ -317,7 +326,7 @@ const accountsFolder = folder(
 
 const moneyFolder = folder(
   '04 - Money Movement',
-  'Deposit, withdraw and transfer between accounts.',
+  'Deposit, withdraw, transfer between accounts, and bill pay.',
   [
     request({
       name: 'Deposit into new account',
@@ -332,6 +341,36 @@ const moneyFolder = folder(
         "pm.test('Deposit confirmation returned', function () {",
         '    var body = pm.response.text();',
         '    pm.expect(body.length).to.be.above(0);',
+        '});',
+      ],
+    }),
+    request({
+      name: 'Pay Bill',
+      method: 'POST',
+      rawPath: '/billpay',
+      query: [
+        { key: 'accountId', value: '{{primaryAccountId}}' },
+        { key: 'amount', value: '15.00' },
+      ],
+      jsonBody: {
+        name: 'Acme Utilities',
+        address: {
+          street: '500 Industrial Pkwy',
+          city: 'Metropolis',
+          state: 'IL',
+          zipCode: '62960',
+        },
+        phoneNumber: '555-0100',
+        accountNumber: 987654321,
+      },
+      description: 'Payee (request body) matches the Payee schema from the Swagger docs.',
+      tests: [
+        ...STATUS_200,
+        "pm.test('Bill pay result matches payee, amount and source account', function () {",
+        '    var json = pm.response.json();',
+        "    pm.expect(json.payeeName).to.eql('Acme Utilities');",
+        '    pm.expect(Number(json.amount)).to.eql(15);',
+        "    pm.expect(String(json.accountId)).to.eql(String(pm.collectionVariables.get('primaryAccountId')));",
         '});',
       ],
     }),
@@ -457,7 +496,8 @@ const transactionsFolder = folder(
     request({
       name: 'Get Transactions by Month and Type',
       method: 'GET',
-      rawPath: '/accounts/{{primaryAccountId}}/transactions/month/{{currentMonthName}}/type/Debit',
+      rawPath: '/accounts/{{primaryAccountId}}/transactions/month/{{currentMonthName}}/type/DEBIT',
+      description: 'The Swagger docs describe accepted values for "type" as CREDIT/DEBIT (uppercase); the Transaction.type field itself serializes back as "Credit"/"Debit" in responses.',
       tests: [...STATUS_200, ...arrayResponseTest('Response is an array')],
     }),
     request({
@@ -556,7 +596,7 @@ const investmentsFolder = folder(
         "    pm.expect(json).to.be.an('array');",
         "    var aapl = json.filter(function (p) { return p.symbol === 'AAPL'; }).pop();",
         "    pm.expect(aapl, 'expected an AAPL position in the response').to.not.be.undefined;",
-        "    pm.collectionVariables.set('positionId', aapl.id);",
+        "    pm.collectionVariables.set('positionId', aapl.positionId);",
         '});',
       ],
     }),
@@ -569,7 +609,7 @@ const investmentsFolder = folder(
         "pm.test('Position list includes the AAPL position bought earlier', function () {",
         '    var json = pm.response.json();',
         "    pm.expect(json).to.be.an('array');",
-        '    var ids = json.map(function (p) { return String(p.id); });',
+        '    var ids = json.map(function (p) { return String(p.positionId); });',
         "    pm.expect(ids).to.include(String(pm.collectionVariables.get('positionId')));",
         '});',
       ],
@@ -582,7 +622,7 @@ const investmentsFolder = folder(
         ...STATUS_200,
         "pm.test('Position id and symbol match', function () {",
         '    var json = pm.response.json();',
-        "    pm.expect(String(json.id)).to.eql(String(pm.collectionVariables.get('positionId')));",
+        "    pm.expect(String(json.positionId)).to.eql(String(pm.collectionVariables.get('positionId')));",
         "    pm.expect(json.symbol).to.eql('AAPL');",
         '});',
       ],
