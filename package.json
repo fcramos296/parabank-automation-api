@@ -7,9 +7,11 @@
     "node": ">=18"
   },
   "scripts": {
-    "generate": "node scripts/generate-collection.js",
+    "generate:base": "node scripts/generate-collection.js",
+    "generate:harden": "node scripts/harden-generated-collection.js",
+    "generate": "npm run generate:base && npm run generate:harden",
     "generate:check": "node scripts/check-generated.js",
-    "validate:syntax": "node --check scripts/generate-collection.js && node --check scripts/check-generated.js",
+    "validate:syntax": "node --check scripts/generate-collection.js && node --check scripts/harden-generated-collection.js && node --check scripts/check-generated.js",
     "quality": "npm run validate:syntax && npm run generate:check",
     "pretest": "npm run generate",
     "test": "rimraf allure-results && newman run postman/ParaBank_API_Tests.postman_collection.json -e postman/ParaBank.postman_environment.json --folder \"01 - Authentication\" --folder \"02 - Customer Profile\" --folder \"03 - Accounts\" --folder \"04 - Money Movement\" --folder \"05 - Transactions\" --folder \"06 - Loans\" --folder \"07 - Investments (Positions)\" --reporters cli,junit,htmlextra,allure --reporter-junit-export newman/report.xml --reporter-htmlextra-export newman/report.html",
