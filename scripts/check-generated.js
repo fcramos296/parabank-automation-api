@@ -106,6 +106,9 @@ try {
   if (!scriptText(monthType).includes("if (pm.response.code !== 200) return;")) {
     throw new Error('Month/type JSON assertions must be guarded against non-200 HTML error responses.');
   }
+  if (!scriptText(monthType).includes('moment.utc(tx.date)')) {
+    throw new Error('Month/type transaction date assertions must normalize response timestamps in UTC.');
+  }
 
   const range = getRequest(requests, '05 - Transactions', 'Get Transactions by Date Range');
   const exactDate = getRequest(requests, '05 - Transactions', 'Get Transactions on Date');
